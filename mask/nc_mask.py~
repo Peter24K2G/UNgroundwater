@@ -1,0 +1,107 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Jun 21 22:54:52 2023
+
+@author: Peter
+"""
+
+import xarray as xr
+import numpy as np
+import shapefile
+from shapely.geometry import Polygon, Point
+
+def read_shp(shp_path,pos=1):
+    '''Converts a shapefile into a polygon object
+    
+    Parameters
+    ----------
+    shp_path : str
+        Provides the path of the shapefile.
+    pos : int (default=1)
+        If the shapefile contains various polygons the 'pos' argument selects
+        the one that lays in this index, the default value select the first
+        polygon
+
+    Returns
+    -------
+    polygon : polygon
+        Returns the polygon of the shapefile pasted as an argument.
+
+    '''
+    sf = shapefile.Reader(shp_path)
+    shape = sf.shapeRecords()[pos-1]
+    vertices = shape.shape.points
+    polygon = Polygon(vertices)
+    return polygon
+
+def drop_na(dataset,dims,how):
+    '''Drop NaN values through dims passed
+    Parameters
+    ----------
+    dataset : xarray.Datase
+        dataset.
+    dims : strlist
+        Dimentions through remove NaN.
+    how : str
+        how ({"any", "all"}, default: "any") –
+            any : if any NA values are present, drop that label
+            all : if all values are NA, drop that label.
+    Returns
+    -------
+    nds : xarray.dataset
+        array whitout NaN values.
+
+    '''
+    for dim in dims:
+        nds = dataset.dropna(dim=dim,how=how)
+        dataset = nds
+    
+    return nds
+
+def masking_nc(dataset,polygon):
+    '''Returns the dataset masked by the polygon passed as atributtes
+
+    Parameters
+    ----------
+    dataset : xarray.Dataset
+        This is the multidimensional dataset object to be masked.
+    polygon : polygon
+        The polygon where the dataset data will be displayed.
+
+    Returns
+    -------
+    dataset_within_polygon : xarray.Dataset
+        The original dataset masked by the polygon.
+
+    '''
+    polygon = read_shp(polygon)
+
+    lon_grid, lat_grid = np.meshgrid(dataset['lon'], dataset['lat'])
+    lon_1d = lon_grid.flatten()
+    lat_1d = lat_grid.flatten()
+    mask = np.array([polygon.contains(Point(lon, lat)) for lon, lat in zip(lon_1d, lat_1d)])
+    mask_2d = mask.reshape(lon_grid.shape) 
+    dataset_within_polygon = xr.where(mask_2d, dataset, np.nan,keep_attrs=False)
+
+    return drop_na(dataset_whitin_polygon,['lon','lat'],'all')
+        
+
+
+def convert_longitude(ds):
+    """Convert longitude coordinates from (0,360) to (-180,180).
+
+    Args:
+        ds (xarray.Dataset): The xarray Dataset to be converted.
+
+    Returns:
+        xarray.Dataset: The converted xarray Dataset.
+    """
+
+    lon_name = ds.coords['lon'].name
+    ds['_longitude_adjusted'] = xr.where(
+        ds[lon_name] > 180, ds[lon_name] - 360, ds[lon_name]
+    )
+    ds = ds.assign_coords(lon=ds['_longitude_adjusted'])
+    ds = ds.sortby(ds.lon)
+    ds = ds.drop('_longitude_adjusted')
+    return ds

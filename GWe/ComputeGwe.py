@@ -1,0 +1,64 @@
+
+
+
+
+
+import xarray as xr
+import re
+
+
+def compute_gwe(glds,gra):
+    #glds = xr.open_dataset(glds)
+    #gra = xr.open_dataset(gra)
+
+    GWe = gra['lwe_thickness_scaled'] - (glds['SoilMoi'].diff('time') + glds['SWE_inst'].diff('time'))
+
+    GWe.attrs = { 'standard_name': 'Grounwater_Estimation',
+             'long_name': 'Grounwater estimation GWE=TWS-(SoiMoi+SWE)',
+             'units': 'cm'
+             }
+
+    return GWe.to_dataset(name='Groundwater_Estimation',promote_attrs=True)
+
+
+def compute_SM_SWE(files,path):
+
+    SMattrs = {'standard_name': 'Soil_Moisture',
+                             'long_name': '0-0.2m depth Soil Moisture',
+                             'units': 'cm',
+                             'cell_methods': 'time: mean'} 
+    SWEattrs = {'standard_name': 'Snow_Water_Equivalent',
+                             'long_name': 'Snow Water Equivalent',
+                             'units': 'cm',
+                             'cell_methods': 'time: mean'}
+    Gds = []
+    for file in files:
+        glds = xr.open_dataset(file)
+        SMs = []
+        for da in glds:
+            if re.search('SoilMoi',da):
+                SMs.append(da)
+
+        SMdas = []
+        for SM in SMs:
+            SMdas.append(glds[SM])
+
+        SoilMoi = xr.DataArray(0.1*(glds[SMs[0]]+glds[SMs[1]]+glds[SMs[2]]+glds[SMs[3]]),
+                   name='SoilMoi',attrs = SMattrs)
+        SWE = xr.DataArray(0.1*(glds['SWE_inst']),attrs=SWEattrs)
+
+        ds = xr.merge([SoilMoi,SWE])
+
+        Gds.append(ds)
+
+    Nds = xr.concat(Gds,dim='time')
+
+
+
+    Nds.attrs = {'standard_name': 'GLDAS_for_Groundwater_estimations',
+                 'long_name': 'Soil Moisture and Snow Water Equivalent for Colombian region',
+                 'units': 'cm',
+                 'cell_methods': 'time: mean'}
+    
+    
+    Nds.to_netcdf(path)
